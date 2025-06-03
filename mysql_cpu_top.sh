@@ -27,7 +27,7 @@ PORT="3306"
 HOST="192.168.58.60"
 cores=$(nproc)
 moni_interval=3
-max_cpu=0
+max_cpu=60
 
 while true; do
 	current_time=$(date +%s)
