@@ -1,7 +1,7 @@
 #/bin/bash
 # crontab needs to be configured to start the script at 0:00 every day, and the script will automatically exit after running for 24 hours
 # 0 0 * * * /usr/bin/bash /data/goldendb/zxdb1/log/cpu >/dev/null 2>&1 &
-# Minimum permission: grant process on *.* to gdb_moni;
+# Minimum permission: grant process on *.* to dbros;
 # Note:
 # Since this script has many detection items, in addition to Com_select, there are also top, processlist, and memory
 # This will cause show Com_select to not be strictly continuous, and may miss a period of time, so the final statistics will be about 8% smaller
@@ -38,10 +38,10 @@ memory_logfile=$log_dir/$(date +'%Y-%m-%d')-mem-monitor.log
 start_time=$(date +%s)
 end_time=$((start_time + 86400 ))
 VERBOSE=false
-USER="gdb_moni"
-PSWD="db1x@NJ+1"
-PORT="5504"
-HOST="10.108.210.135"
+USER="dbros"
+PSWD="123456"
+PORT="3306"
+HOST="192.168.58.60"
 cores=$(nproc)
 moni_interval=3
 max_cpu=60
