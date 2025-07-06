@@ -27,12 +27,14 @@ Scheduled task configuration. If you configure a scheduled task, please check wh
 0 0 * * * /usr/bin/bash /monitor/mysql_cpu_top.sh >/dev/null 2>&1 &
 ```
 
-Output 3 files:
+Output 4 files:
 
 1. 2025-06-03-CPU-QPS.log: `CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}%`
 2. When it is greater than the variable specified by max_cpu:
    1. 2025-06-03-active-session.log:`CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% 活跃会话信息：\n$ACTIVE_SESSIONS_QUERY\n"`
    2. 2025-06-03-cpu-top.log: `CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% top 20 信息：\n$top_first20\n`
+3. Monitor the memory output file and output the memory of the /proc/meminfo file when the memory is greater than 80%
+   1. 2025-06-03-mem-monitor.log:`总内存:${MemTotal_GB}GB 已使用:${MemUsed}GB  缓存+缓冲:${CacheBuffers}GB Dirty:${Dirty} Writeback:${Writeback} CommitLimit:${CommitLimit_GB}GB Committed_AS:${Committed_AS_GB}GB`
 
 2025-06-03-CPU-QPS.log output
 
@@ -91,6 +93,60 @@ KiB Swap:  2097148 total,  2094580 free,     2568 used.  1217928 avail Mem
      8 root      20   0       0      0      0 S   0.0  0.0   0:00.00 rcu_bh
      9 root      20   0       0      0      0 R   0.0  0.0  28:06.31 rcu_sched
     10 root       0 -20       0      0      0 S   0.0  0.0   0:00.00 lru-add-drain
+
+```
+
+2025-06-03-mem-monitor.log output
+
+```sql
+[2025-06-30 18:36:44] 总内存:2GB 已使用:1GB  缓存+缓冲:1GB Dirty:40 Writeback:0 CommitLimit:3GB Committed_AS:2GB
+[2025-06-30 18:36:44] 已使用内存比例:50
+MemTotal:        2860040 kB
+MemFree:          214956 kB
+MemAvailable:    1029424 kB
+Buffers:               0 kB
+Cached:           735896 kB
+SwapCached:          104 kB
+Active:           892112 kB
+Inactive:         726372 kB
+Active(anon):     458812 kB
+Inactive(anon):   470260 kB
+Active(file):     433300 kB
+Inactive(file):   256112 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+SwapTotal:       2097148 kB
+SwapFree:        2093556 kB
+Dirty:                40 kB
+Writeback:             0 kB
+AnonPages:        882548 kB
+Mapped:           121700 kB
+Shmem:             46484 kB
+Slab:             544124 kB
+SReclaimable:     406588 kB
+SUnreclaim:       137536 kB
+KernelStack:        8832 kB
+PageTables:        23892 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:     3461632 kB
+Committed_AS:    2899060 kB
+VmallocTotal:   34359738367 kB
+VmallocUsed:      185244 kB
+VmallocChunk:   34359310332 kB
+HardwareCorrupted:     0 kB
+AnonHugePages:    468992 kB
+CmaTotal:              0 kB
+CmaFree:               0 kB
+HugePages_Total:      64
+HugePages_Free:       50
+HugePages_Rsvd:       19
+HugePages_Surp:        0
+Hugepagesize:       2048 kB
+DirectMap4k:      143168 kB
+DirectMap2M:     3035136 kB
+DirectMap1G:           0 kB
 
 ```
 
