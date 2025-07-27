@@ -35,6 +35,21 @@
 # write: 2025/03/19
 # update : 2025/07/07
 
+# Counter, records the number of seconds that have passed
+SECONDS=0
+
+cleanup() {
+   if [[ "$1" != "exit_clean" ]]; then
+       echo "捕获到信号，正在清理资源..."
+       rm -rf $temp_dir 2>/dev/null
+       echo "清理完成，脚本退出"
+   fi
+   exit 0
+}
+
+trap 'cleanup' SIGTERM SIGINT
+trap 'cleanup exit_clean' EXIT
+
 log () {
     local msg="[$(date +'%Y-%m-%d %H:%M:%S')] $1"
 	local log="$2"
@@ -45,7 +60,7 @@ log () {
     fi
 }
 
-log_dir="/test/cpu/log"
+log_dir="/test/cpu/c"
 logfile=$log_dir/$(date +'%Y-%m-%d')-CPU-QPS.log
 active_session_logfile=$log_dir/$(date +'%Y-%m-%d')-active-session.log
 cpu_top=$log_dir/$(date +'%Y-%m-%d')-cpu-top.log
@@ -56,10 +71,10 @@ DELETE_LOG=$log_dir/delete-log.log
 start_time=$(date +%s)
 end_time=$((start_time + 86400 ))
 VERBOSE=false
-USER="db_moni"
+USER="dbros"
 PSWD="123456"
 PORT="3306"
-HOST="10.10.10.13"
+HOST="192.168.58.60"
 # Client path
 client="/application/mysql_8_3306/bin/mysql"
 cores=$(nproc)
@@ -67,10 +82,12 @@ cores=$(nproc)
 moni_interval=3
 # When the CPU value is greater than 60, output the value of SQL and top commands
 max_cpu=60
+# When the memory value is greater than 80, output the /proc/meminfo
+max_mem=80
 # Check the log directory and clean up the logs 60 days ago when running the script every day
 DELETE_DAYS=60
-# Counter, records the number of seconds that have passed
-SECONDS=0
+
+Ratio=0
 
 memory_monitor(){
 	MemTotal=0; Memfree=0; MemAvailable=0
@@ -109,7 +126,7 @@ memory_monitor(){
 	
 	log "总内存:${MemTotal_GB}GB 已使用:${MemUsed}GB  缓存+缓冲:${CacheBuffers}GB Dirty:${Dirty} Writeback:${Writeback} CommitLimit:${CommitLimit_GB}GB Committed_AS:${Committed_AS_GB}GB" "$memory_logfile"
 	Ratio=$(( MemUsed*100/MemTotal_GB ))
-	if (( Ratio > 80 )); then
+	if (( Ratio > $max_mem )); then
 		log "已使用内存比例:${Ratio}" "$memory_logfile"
 		cat /proc/meminfo >> $memory_logfile
 		
@@ -118,14 +135,54 @@ memory_monitor(){
 
 log "查找 ${DELETE_DAYS} 天前的日志进行删除..." "$DELETE_LOG"
 DELETE_FILES=$(find ${log_dir} -type f -mtime +${DELETE_DAYS} \
-    -regextype posix-extended \
-    -regex '.*(CPU-QPS|active-session|cpu-top|mem-monitor)\.log$' \
-    -print)
-for filename in ${DELETE_DAYS}
-do
-    log "Rotation: deleting ${filename}" "$DELETE_LOG"
-    rm ${filename}
-done
+-regextype posix-extended \
+-regex '.*(CPU-QPS|active-session|cpu-top|mem-monitor)\.log$' \
+-print
+)
+if [ -n "$DELETE_FILES" ]; then
+	log "找到以下文件，将开始删除：" "$DELETE_LOG"
+	# 打印列表
+	for f in $DELETE_FILES; do 
+		echo "  $f" >> "$DELETE_LOG"
+	done
+	
+	# Clear the deletion record log
+	> "$DELETE_LOG"
+	
+	for filename in ${DELETE_FILES}; do
+		log "Rotation: deleting ${filename}" "$DELETE_LOG"
+		rm -f "${filename}" && \
+			log "已删除: ${filename}" "$DELETE_LOG" || \
+			log "删除失败: ${filename}" "$DELETE_LOG"
+	done
+else
+	log "没有符合条件的文件，无需删除。" "$DELETE_LOG"
+fi
+
+# Create a temporary directory and configuration file
+temp_dir=$(mktemp -d -p "$log_dir")
+mkdir -p "$temp_dir/procps"
+
+# top Configuration
+cat << 'EOF' | base64 -d > "$temp_dir/procps/toprc"
+dG9wJ3MgQ29uZmlnIEZpbGUgKExpbnV4IHByb2Nlc3NlcyB3aXRoIHdpbmRvd3MpCklkOmksIE1v
+ZGVfYWx0c2NyPTAsIE1vZGVfaXJpeHBzPTEsIERlbGF5X3RpbWU9My4wLCBDdXJ3aW49MApEZWYJ
+ZmllbGRzY3VyPaWos7S7vcDEt7q5xaYnKSorLC0uLzAxMjU2uDw+P0FCQ0ZHSElKS8zNTk9Q0VJT
+VFVWV1hZWtvcXV5fYGFiY2RlZmdoaWoKCXdpbmZsYWdzPTE5Mjc1Niwgc29ydGluZHg9MjEsIG1h
+eHRhc2tzPTAsIGdyYXBoX2NwdXM9MCwgZ3JhcGhfbWVtcz0wCglzdW1tY2xyPTEsIG1zZ3NjbHI9
+MSwgaGVhZGNscj0zLCB0YXNrY2xyPTEKSm9iCWZpZWxkc2N1cj2lprm3uiiztMS7vUA8p8UpKiss
+LS4vMDEyNTY4Pj9BQkNGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqCgl3aW5m
+bGFncz0xOTM4NDQsIHNvcnRpbmR4PTAsIG1heHRhc2tzPTAsIGdyYXBoX2NwdXM9MCwgZ3JhcGhf
+bWVtcz0wCglzdW1tY2xyPTYsIG1zZ3NjbHI9NiwgaGVhZGNscj03LCB0YXNrY2xyPTYKTWVtCWZp
+ZWxkc2N1cj2lurs8vb6/wMFNQk7DRDM0t8UmJygpKissLS4vMDEyNTY4OUZHSElKS0xPUFFSU1RV
+VldYWVpbXF1eX2BhYmNkZWZnaGlqCgl3aW5mbGFncz0xOTM4NDQsIHNvcnRpbmR4PTIxLCBtYXh0
+YXNrcz0wLCBncmFwaF9jcHVzPTAsIGdyYXBoX21lbXM9MAoJc3VtbWNscj01LCBtc2dzY2xyPTUs
+IGhlYWRjbHI9NCwgdGFza2Nscj01ClVzcglmaWVsZHNjdXI9paanqKqwube6xMUpKywtLi8xMjM0
+NTY4Ozw9Pj9AQUJDRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl9gYWJjZGVmZ2hpagoJd2luZmxh
+Z3M9MTkzODQ0LCBzb3J0aW5keD0zLCBtYXh0YXNrcz0wLCBncmFwaF9jcHVzPTAsIGdyYXBoX21l
+bXM9MAoJc3VtbWNscj0zLCBtc2dzY2xyPTMsIGhlYWRjbHI9MiwgdGFza2Nscj0zCkZpeGVkX3dp
+ZGVzdD0wLCBTdW1tX21zY2FsZT0yLCBUYXNrX21zY2FsZT0yLCBaZXJvX3N1cHByZXNzPTAKCg==
+EOF
 
 
 while true; do
@@ -167,7 +224,18 @@ while true; do
 	# If a multiple of 10 seconds has passed, monitor the memory once
 	if (( SECONDS % 10 == 0 )); then
 		memory_monitor
+		if awk "BEGIN { exit !($Ratio > $max_mem ) }"; then
+			# Specify XDG_CONFIG_HOME
+			mem_top_first20=$(XDG_CONFIG_HOME="$temp_dir" top -bn1 -w 200 -o %MEM|head -20)
+			log "CPU 使用率：${CPU_USAGE}% 内存使用率：${Ratio}% 活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% top 20 信息：\n$mem_top_first20\n" "$cpu_top"
+			
+		fi
 	fi
 
 	
 done
+
+# Clean up toprc temporary files
+rm -rf "$temp_dir" && \
+    log "已删除 TOP 临时目录: ${temp_dir}" "$logfile" || \
+    log "删除TOP 临时目录失败: ${temp_dir}" "$logfile"
