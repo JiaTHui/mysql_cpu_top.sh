@@ -30,10 +30,10 @@ Scheduled task configuration. If you configure a scheduled task, please check wh
 
 Output 4 files:
 
-1. 2025-07-27-CPU-QPS.log: `CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}%`
+1. 2025-07-27-CPU-QPS.log: `CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} TPS:${TPS} RPS:${RPS} XA_TPS:${XA_TPS} XA_RPS:${XA_RPS} DT:${DT},${T} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}%`
 2. When it is greater than the variable specified by max_cpu:
-   1. 2025-07-27-active-session.log:`CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% 活跃会话信息：\n$ACTIVE_SESSIONS_QUERY\n"`
-   2. 2025-07-27-cpu-top.log: `CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% top 20 信息：\n$top_first20\n`
+   1. 2025-07-27-active-session.log:`CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} TPS:${TPS} RPS:${RPS} XA_TPS:${XA_TPS} XA_RPS:${XA_RPS} DT:${DT},${T} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% 活跃会话信息：\n$ACTIVE_SESSIONS_QUERY\n`
+   2. 2025-07-27-cpu-top.log: `CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} TPS:${TPS} RPS:${RPS} XA_TPS:${XA_TPS} XA_RPS:${XA_RPS} DT:${DT},${T} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% top 20 信息：\n$top_first20\n`
 3. Monitor the memory output file and output the memory of the /proc/meminfo file when the memory is greater than 80%
    1. 2025-06-03-mem-monitor.log:`总内存:${MemTotal_GB}GB 已使用:${MemUsed}GB  缓存+缓冲:${CacheBuffers}GB Dirty:${Dirty} Writeback:${Writeback} CommitLimit:${CommitLimit_GB}GB Committed_AS:${Committed_AS_GB}GB`
 
