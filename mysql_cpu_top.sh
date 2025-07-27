@@ -30,6 +30,17 @@
 # 4. 2025-07-07-cpu-top.log: When the CPU reaches 60, pull the value of the top command. At this time, the log information can be used to view the specific process usage
 # 5. delete-log.log : Every time the script is started, it searches for logs from 60 days ago and cleans them up, and outputs the cleaned logs. The regular expression matches '.*(CPU-QPS|active-session|cpu-top|mem-monitor)\.log$'
 
+# Monitoring indicator explanation:
+# CPU usage: ${CPU_USAGE}% Current CPU value
+# Number of active sessions: ${ACTIVE_SESSIONS} Current active sessions
+# QPS: ${QPS} Number of SELECTs in a monitoring cycle
+# TPS: ${TPS} Number of transactions in a monitoring cycle
+# RPS: ${RPS} Number of rollbacks in a monitoring cycle
+# XA_TPS: ${XA_TPS} Number of XA transactions in a monitoring cycle
+# XA_RPS: ${XA_RPS} Number of XA transaction rollbacks in a monitoring cycle
+# DT: ${DT}, ${T} Number of DROP TABLE/TRUNCATE TABLE in a monitoring cycle
+# 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}%  The process with the highest current CPU value. If it is not the mysqld process name of the current DN user, check 2025-07-07-cpu-top.log log to obtain the process with the highest usage
+
 # auth:Liu Huiming https://github.com/JiaTHui
 # 
 # write: 2025/03/19
@@ -185,6 +196,24 @@ ZGVzdD0wLCBTdW1tX21zY2FsZT0yLCBUYXNrX21zY2FsZT0yLCBaZXJvX3N1cHByZXNzPTAKCg==
 EOF
 
 
+names_str="'Com_select','Com_commit','Com_rollback','Com_xa_commit','Com_xa_rollback','Com_drop_table','Com_truncate'"
+
+get_stats(){
+	${mysql_client} -u"${USER}" -p"${PSWD}" \
+	-h"${HOST}" -P"${PORT}" -A -NB -c \
+	-e"SHOW GLOBAL STATUS WHERE Variable_name IN (${names_str});" 2>/dev/null \
+	|awk '
+		$1=="Com_select" 		{s=$2}
+		$1=="Com_commit" 		{c=$2}
+		$1=="Com_rollback" 		{r=$2}
+		$1=="Com_xa_commit" 	{xc=$2}
+		$1=="Com_xa_rollback" 	{xr=$2}
+		$1=="Com_drop_table" 	{dt=$2}
+		$1=="Com_truncate" 		{t=$2}
+		END {print s, c, r, xc, xr, dt, t}
+		'
+}
+
 while true; do
 	current_time=$(date +%s)
 	
@@ -192,10 +221,19 @@ while true; do
 	    log "已运行 24 小时，即将退出..." "$logfile"
 	    break
 	fi
-	QPS_V1=$($client -u"${USER}" -p"${PSWD}" -h"${HOST}" -P"${PORT}" -A -NB -c -e"show global status like 'Com_select';" 2>/dev/null |awk 'NR==1{print $2}')
-    sleep $moni_interval
-	QPS_V2=$($client -u"${USER}" -p"${PSWD}" -h"${HOST}" -P"${PORT}" -A -NB -c -e"show global status like 'Com_select';" 2>/dev/null |awk 'NR==1{print $2}')
+	
+	read QPS_V1 TPS_V1 RPS_V1 XA_TPS_V1 XA_RPS_V1 DT_V1 T_V1 < <( get_stats )
+	sleep $moni_interval
+	read QPS_V2 TPS_V2 RPS_V2 XA_TPS_V2 XA_RPS_V2 DT_V2 T_V2 < <( get_stats )
+	
     QPS=$(( QPS_V2 - QPS_V1 - 2))
+	TPS=$(( TPS_V2 - TPS_V1))
+	RPS=$(( RPS_V2 - RPS_V1))
+	XA_TPS=$(( XA_TPS_V2 - XA_TPS_V1))
+	XA_RPS=$(( XA_RPS_V2 - XA_RPS_V1))
+	DT=$(( DT_V2 - DT_V1))
+	T=$(( T_V2 - T_V1))
+	
 	read CPU_USAGE proc_user proc_cmd proc_cpu < <(
 		top -b -n1|awk -v c=$cores '
 		/%Cpu\(s\)/	{ CPU_USAGE = 100 - $8}
@@ -210,29 +248,28 @@ while true; do
 		'
 	)
 	
-    ACTIVE_SESSIONS=$($client -u"${USER}" -p"${PSWD}" -h"${HOST}" -P"${PORT}" -A -NB -c -e"select count(*) from performance_schema.processlist where COMMAND <>'Sleep';" 2>/dev/null)
-	log "CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}%" "$logfile"
+    ACTIVE_SESSIONS=$(${mysql_client} -u"${USER}" -p"${PSWD}" -h"${HOST}" -P"${PORT}" -A -NB -c -e"select count(*) from performance_schema.processlist where COMMAND <>'Sleep';" 2>/dev/null)
+	log "CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} TPS:${TPS} RPS:${RPS} XA_TPS:${XA_TPS} XA_RPS:${XA_RPS} DT:${DT},${T} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}%" "$logfile"
 	
-	if awk "BEGIN { exit !($CPU_USAGE > $max_cpu) }"; then
-	    ACTIVE_SESSIONS_QUERY=$($client -u"${USER}" -p"${PSWD}" -h"${HOST}" -P"${PORT}" -A -c -t -e"select /*+ SET_VAR(sql_mode='STRICT_TRANS_TABLES')  */ group_concat(ID) 'ID',user,DB,Command, group_concat(TIME) 'Time',STATE,INFO,count(*) from performance_schema.processlist where COMMAND<>'Sleep' and user<>'repl' group by user,DB,Command,STATE,substring(INFO,1,30) order by count(*) asc\G" 2>/dev/null)
+	if awk "BEGIN { exit !($CPU_USAGE > $max_cpu ) }"; then
+	    ACTIVE_SESSIONS_QUERY=$(${mysql_client} -u"${USER}" -p"${PSWD}" -h"${HOST}" -P"${PORT}" -A -c -t -e"select group_concat(ID) 'ID',user,DB,Command, group_concat(TIME) 'Time',STATE,INFO,count(*) from performance_schema.processlist where COMMAND<>'Sleep' and user<>'repl' group by user,DB,Command,STATE,substring(INFO,1,30) order by count(*) asc\G" 2>/dev/null)
 		top_first20=$(top -bn1|head -20)
-	    log "CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% 活跃会话信息：\n$ACTIVE_SESSIONS_QUERY\n" "$active_session_logfile"
-		log "CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% top 20 信息：\n$top_first20\n" "$cpu_top"
+	    log "CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} TPS:${TPS} RPS:${RPS} XA_TPS:${XA_TPS} XA_RPS:${XA_RPS} DT:${DT},${T} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% 活跃会话信息：\n$ACTIVE_SESSIONS_QUERY\n" "$active_session_logfile"
+		log "CPU 使用率：${CPU_USAGE}%  活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} TPS:${TPS} RPS:${RPS} XA_TPS:${XA_TPS} XA_RPS:${XA_RPS} DT:${DT},${T} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% top 20 信息：\n$top_first20\n" "$cpu_top"
 		
 	fi
-
+	
 	# If a multiple of 10 seconds has passed, monitor the memory once
 	if (( SECONDS % 10 == 0 )); then
 		memory_monitor
 		if awk "BEGIN { exit !($Ratio > $max_mem ) }"; then
-			# Specify XDG_CONFIG_HOME
+			# 指定 XDG_CONFIG_HOME
 			mem_top_first20=$(XDG_CONFIG_HOME="$temp_dir" top -bn1 -w 200 -o %MEM|head -20)
-			log "CPU 使用率：${CPU_USAGE}% 内存使用率：${Ratio}% 活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% top 20 信息：\n$mem_top_first20\n" "$cpu_top"
+			log "CPU 使用率：${CPU_USAGE}% 内存使用率：${Ratio}% 活跃会话数:${ACTIVE_SESSIONS} QPS:${QPS} TPS:${TPS} RPS:${RPS} XA_TPS:${XA_TPS} XA_RPS:${XA_RPS} DT:${DT},${T} 占用最高：user:${proc_user} comm:${proc_cmd} CPU:${proc_cpu}% top 20 信息：\n$mem_top_first20\n" "$cpu_top"
 			
 		fi
 	fi
 
-	
 done
 
 # Clean up toprc temporary files
